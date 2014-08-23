@@ -1,4 +1,4 @@
 handDetection
 =============
 
-Hand detection using OpenCV
+Hand detection using OpenCV and color recognition.
