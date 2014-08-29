@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <string>
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
 
@@ -25,10 +26,12 @@ Mat dilElement = getStructuringElement(MORPH_RECT,
 	Size(2 * dilation_size + 1, 2 * dilation_size + 1),
 	Point(dilation_size, dilation_size));
 
+//function headers
 Mat filterHand(VideoCapture cap);
 Scalar detectSkinColor(Mat frame, Rect scanBox);
 Mat scanBox(Rect box, Mat frame, int boxNum);
 void detectHand(Mat frame);
+vector<Vec4i> findFingerDefects(vector<Vec4i> defects);
 
 int main(){
 	Mat frame;
@@ -169,7 +172,7 @@ Mat filterHand(VideoCapture cap){
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;
 		double area, maxArea = 0;
-		int maxContour;
+		int maxContour, numFingers;
 
 		/// Detect edges using canny
 		//Canny(finFrame, canny_output, 80, 80 * 2, 3);
@@ -185,11 +188,30 @@ Mat filterHand(VideoCapture cap){
 			}
 		}
 
+		//find the convex hull
+		vector<vector<Point>> hull(contours.size());
+		vector<int> hullI;
+		convexHull(Mat(contours[maxContour]), hull[maxContour], false); //hull to draw
+		convexHull(Mat(contours[maxContour]), hullI, false); //hull to calculate defects
+
+		//find the fingers
+		vector<Vec4i> defects, fingerDefects;
+		convexityDefects(contours[maxContour], hullI, defects); //find defects
+		fingerDefects = findFingerDefects(defects); //eliminate irrelevant defects
+
+		if (fingerDefects.size() >= 1)
+			numFingers = fingerDefects.size() - 1;
+		else
+			numFingers = 0;
+
 		/// Draw contours
 		Mat drawing = Mat::zeros(finFrame.size(), CV_8UC3);
 		drawContours(drawing, contours, maxContour, Scalar(0,0,255), 2, 8, hierarchy, 0, Point());
+		drawContours(drawing, hull, maxContour, Scalar(0, 255, 0), 2, 8, hierarchy, 0, Point());
 
 		/// Show in a window
+		string fingerCount = "fingers: " + to_string(numFingers);
+		putText(drawing, fingerCount, Point(20,20), FONT_HERSHEY_PLAIN, 2, Scalar(255, 255, 0), 4, 8, 0);
 		namedWindow("Contours", CV_WINDOW_AUTOSIZE);
 		imshow("Contours", drawing);
 
@@ -232,4 +254,18 @@ Scalar detectSkinColor(Mat frame, Rect scanBox){
 	cout << "avg Color" << avgSkinColor << endl;
 
 	return avgSkinColor;
+}
+
+vector<Vec4i> findFingerDefects(vector<Vec4i> defects){
+	vector<Vec4i> fingerDefects;
+	double minDepth = 2500;
+
+	for (int i = 0; i < defects.size(); i++){
+		cout << "depth is: " << defects[i][3] << endl;
+		if (defects[i][3] > minDepth){
+			fingerDefects.push_back(defects[i]);
+		}
+	}
+
+	return fingerDefects;
 }
