@@ -4,14 +4,15 @@
 #include <string>
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
+#include <ctime>
 
 using namespace cv;
 using namespace std;
 
 int erosion_elem = 0;
-int erosion_size = 2;
+int erosion_size = 3;
 int dilation_elem = 0;
-int dilation_size = 5;
+int dilation_size = 4;
 int const max_elem = 2;
 int const max_kernel_size = 21;
 Scalar avgSkinCol[6];
@@ -58,6 +59,10 @@ void detectHand(Mat frame){
 }
 
 Mat filterHand(VideoCapture cap){
+	//performance measurements
+	clock_t begin, end;
+	double tGaussBlr, tThreshold, tCombine, tMedBlur, tMorph, tDisplayResults;
+
 	Mat finFrame;
 
 	while (1){
@@ -71,7 +76,9 @@ Mat filterHand(VideoCapture cap){
 		frame.copyTo(showFrame);
 
 		//soften image
-		GaussianBlur(frame, frame, Size(5, 5), 0);
+		begin = clock();
+		//GaussianBlur(frame, frame, Size(5, 5), 0);
+		tGaussBlr = double(clock() - begin) / CLOCKS_PER_SEC;
 
 		cvtColor(frame, frame, CV_BGR2HSV);
 
@@ -85,23 +92,33 @@ Mat filterHand(VideoCapture cap){
 		Rect box6(frame.cols / 2 + square, frame.rows / 2 + (3 * square / 2), square, square); //right low
 
 		//threshold the images
+		begin = clock();
 		threshImage[0] = scanBox(box1, frame, 0);
 		threshImage[1] = scanBox(box2, frame, 1);
 		threshImage[2] = scanBox(box3, frame, 2);
 		threshImage[3] = scanBox(box4, frame, 3);
 		threshImage[4] = scanBox(box5, frame, 4);
 		threshImage[5] = scanBox(box6, frame, 5);
+		tThreshold = double(clock() - begin) / CLOCKS_PER_SEC;
 
 		//combine
+		begin = clock();
 		finImage = threshImage[0] | threshImage[1] | threshImage[2] | threshImage[3] | threshImage[4] | threshImage[5];
+		tCombine = double(clock() - begin) / CLOCKS_PER_SEC;
 
 		//get rid of excess noise
-		medianBlur(finImage, finImage, 5);
+		begin = clock();
+		medianBlur(finImage, finImage, 3);
+		tMedBlur = double(clock() - begin) / CLOCKS_PER_SEC;
 
 		//opening morphological transform
+		begin = clock();
 		erode(finImage, finImage, eroElement);
 		dilate(finImage, finImage, dilElement);
+		tMorph = double(clock() - begin) / CLOCKS_PER_SEC;
 
+		//draw rectangles
+		begin = clock();
 		rectangle(showFrame, box1, Scalar(0, 0, 255), 2, 8, 0);
 		rectangle(showFrame, box2, Scalar(0, 0, 255), 2, 8, 0);
 		rectangle(showFrame, box3, Scalar(0, 0, 255), 2, 8, 0);
@@ -116,14 +133,22 @@ Mat filterHand(VideoCapture cap){
 		//show results
 		namedWindow("finImage", CV_WINDOW_AUTOSIZE);
 		imshow("finImage", finImage);
+		tDisplayResults = double(clock() - begin) / CLOCKS_PER_SEC;
 
 		if (waitKey(30) >= 0){
 			finFrame = finImage;
-
 			break;
 		}
 
 	}
+
+	cout << "TIMING: " << endl;
+	cout << "Gauss: " << tGaussBlr << endl;
+	cout << "tThreshold: " << tThreshold << endl;
+	cout << "tCombine: " << tCombine << endl;
+	cout << "tMedBlur: " << tMedBlur << endl;
+	cout << "tMorph: " << tMorph << endl;
+	cout << "tDisplayResults: " << tDisplayResults << endl;
 
 	while (1){
 		Mat frame, finImage, showFrame, threshImage[6];
@@ -142,8 +167,8 @@ Mat filterHand(VideoCapture cap){
 		for (int i = 0; i<numBox; i++){
 
 			inRange(frame,
-				Scalar(avgSkinCol[i][0] - 20, avgSkinCol[i][1] - 30, avgSkinCol[i][2] - 30), //0,55,90
-				Scalar(avgSkinCol[i][0] + 20, avgSkinCol[i][1] + 30, avgSkinCol[i][2] + 30), //28,175,230
+				Scalar(avgSkinCol[i][0] - 30, avgSkinCol[i][1] - 25, avgSkinCol[i][2] - 25), //0,55,90
+				Scalar(avgSkinCol[i][0] + 30, avgSkinCol[i][1] + 25, avgSkinCol[i][2] + 25), //28,175,230
 				threshImage[i]
 				);
 
@@ -154,7 +179,9 @@ Mat filterHand(VideoCapture cap){
 		finImage = threshImage[0] | threshImage[1] | threshImage[2] | threshImage[3] | threshImage[4] | threshImage[5];
 
 		//get rid of excess noise
-		medianBlur(finImage, finImage, (5 * 2) + 1);
+		medianBlur(finImage, finImage, (1 * 2) + 1);
+
+		
 
 		//opening morphological transform
 		erode(finImage, finImage, eroElement);
@@ -188,33 +215,48 @@ Mat filterHand(VideoCapture cap){
 			}
 		}
 
-		//find the convex hull
-		vector<vector<Point>> hull(contours.size());
-		vector<int> hullI;
-		convexHull(Mat(contours[maxContour]), hull[maxContour], false); //hull to draw
-		convexHull(Mat(contours[maxContour]), hullI, false); //hull to calculate defects
+		
+		if (contours.size() >= 1){
 
-		//find the fingers
-		vector<Vec4i> defects, fingerDefects;
-		convexityDefects(contours[maxContour], hullI, defects); //find defects
-		fingerDefects = findFingerDefects(defects); //eliminate irrelevant defects
+			//find the convex hull
+			vector<vector<Point>> hull(contours.size());
+			vector<int> hullI;
+			convexHull(Mat(contours[maxContour]), hull[maxContour], false); //hull to draw
+			convexHull(Mat(contours[maxContour]), hullI, false); //hull to calculate defects
 
-		if (fingerDefects.size() >= 1)
-			numFingers = fingerDefects.size() - 1;
-		else
-			numFingers = 0;
+			//find centroid of hand
+			Point centroid(0,0);
+			for (int i = 0; i < hull[maxContour].size(); i++){
+				centroid.x += hull[maxContour][i].x;
+				centroid.y += hull[maxContour][i].y;
+			}
+			centroid.x /= hull[maxContour].size();
+			centroid.y /= hull[maxContour].size();
 
-		/// Draw contours
-		Mat drawing = Mat::zeros(finFrame.size(), CV_8UC3);
-		drawContours(drawing, contours, maxContour, Scalar(0,0,255), 2, 8, hierarchy, 0, Point());
-		drawContours(drawing, hull, maxContour, Scalar(0, 255, 0), 2, 8, hierarchy, 0, Point());
+			//find the fingers
+			vector<Vec4i> defects, fingerDefects;
+			convexityDefects(contours[maxContour], hullI, defects); //find defects
+			fingerDefects = findFingerDefects(defects); //eliminate irrelevant defects
 
-		/// Show in a window
-		string fingerCount = "fingers: " + to_string(numFingers);
-		putText(drawing, fingerCount, Point(20,20), FONT_HERSHEY_PLAIN, 2, Scalar(255, 255, 0), 4, 8, 0);
-		namedWindow("Contours", CV_WINDOW_AUTOSIZE);
-		imshow("Contours", drawing);
+			if (fingerDefects.size() >= 1)
+				numFingers = fingerDefects.size() - 1;
+			else
+				numFingers = 0;
 
+			/// Draw contours
+			Mat drawing = Mat::zeros(finFrame.size(), CV_8UC3);
+			drawContours(drawing, contours, maxContour, Scalar(0, 0, 255), 2, 8, hierarchy, 0, Point());
+			drawContours(drawing, hull, maxContour, Scalar(0, 255, 0), 2, 8, hierarchy, 0, Point());
+			///Draw Centroid
+			circle(drawing, centroid, 5, Scalar(255, 0, 0), 10, 8, 0);
+
+			/// Show in a window
+			string fingerCount = "fingers: " + to_string(numFingers);
+			putText(drawing, fingerCount, Point(20, 20), FONT_HERSHEY_PLAIN, 2, Scalar(255, 255, 0), 4, 8, 0);
+			namedWindow("Contours", CV_WINDOW_AUTOSIZE);
+			imshow("Contours", drawing);
+
+		}
 		if (waitKey(30) >= 0){
 			break;
 		}
@@ -233,8 +275,8 @@ Mat scanBox(Rect box, Mat frame, int boxNum){
 	//GaussianBlur(frame, frame, Size(5,5), 0);
 	//threshold skin
 	inRange(frame,
-		Scalar(avgSkinCol[boxNum][0] - 20, avgSkinCol[boxNum][1] - 30, avgSkinCol[boxNum][2] - 30),
-		Scalar(avgSkinCol[boxNum][0] + 20, avgSkinCol[boxNum][1] + 30, avgSkinCol[boxNum][2] + 30),
+		Scalar(avgSkinCol[boxNum][0] - 30, avgSkinCol[boxNum][1] - 25, avgSkinCol[boxNum][2] - 25),
+		Scalar(avgSkinCol[boxNum][0] + 30, avgSkinCol[boxNum][1] + 25, avgSkinCol[boxNum][2] + 25),
 		threshImage);
 
 	//medianBlur(threshImage, threshImage, 5);
@@ -251,7 +293,7 @@ Scalar detectSkinColor(Mat frame, Rect scanBox){
 	//find the average value
 	Scalar avgSkinColor = mean(skinFrame); //perhaps get median?
 
-	cout << "avg Color" << avgSkinColor << endl;
+	//cout << "avg Color" << avgSkinColor << endl;
 
 	return avgSkinColor;
 }
@@ -261,7 +303,7 @@ vector<Vec4i> findFingerDefects(vector<Vec4i> defects){
 	double minDepth = 2500;
 
 	for (int i = 0; i < defects.size(); i++){
-		cout << "depth is: " << defects[i][3] << endl;
+		//cout << "depth is: " << defects[i][3] << endl;
 		if (defects[i][3] > minDepth){
 			fingerDefects.push_back(defects[i]);
 		}
