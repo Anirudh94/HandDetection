@@ -25,7 +25,7 @@ int const max_kernel_size = 21;
 Scalar avgSkinCol[6];
 int numSamples = 6;
 
-//microsoft input
+//Windows input
 INPUT ip[2];
 bool leftPressed = false;
 bool rightPressed = false;
@@ -34,7 +34,6 @@ bool rightPressed = false;
 Mat eroElement = getStructuringElement(MORPH_RECT,
 	Size(2 * erosion_size + 1, 2 * erosion_size + 1),
 	Point(erosion_size, erosion_size));
-
 Mat dilElement = getStructuringElement(MORPH_RECT,
 	Size(2 * dilation_size + 1, 2 * dilation_size + 1),
 	Point(dilation_size, dilation_size));
@@ -45,74 +44,15 @@ Scalar detectSkinColor(Mat frame, Rect scanBox);
 Mat scanBox(Rect box, Mat frame, int boxNum);
 void detectHand(Mat frame);
 vector<Vec4i> findFingerDefects(vector<Vec4i> defects);
-
-int clamp(int n){
-	int x = n > 255? 255 : n;
-			x < 0?	 0 : x;
-	
-	return x;
-}
-
-void leftPress(){
-	// Press the "LEFT" key
-	ip[0].ki.wVk = VK_LEFT; // virtual-key code for the left arrow key
-	ip[0].ki.dwFlags = 0; // 0 for key press
-	SendInput(1, &ip[0], sizeof(INPUT));
-}
-
-void rightPress(){
-	// Press the "RIGHT" key
-	ip[0].ki.wVk = VK_RIGHT; // virtual-key code for the right arrow key
-	ip[0].ki.dwFlags = 0; // 0 for key press
-	SendInput(1, &ip[0], sizeof(INPUT));
-}
-
-void spacePress(){
-	ip[0].ki.wVk = VK_SPACE; // virtual-key code for the spacebar
-	ip[0].ki.dwFlags = 0; // 0 for key press
-	SendInput(1, &ip[0], sizeof(INPUT));
-}
-
-void upRightDiag(){
-	// Press the spacebar
-	ip[0].ki.wVk = VK_SPACE;
-	ip[0].ki.dwFlags = 0;
-	//press "RIGHT" key
-	ip[1].ki.wVk = VK_RIGHT;
-	ip[1].ki.dwFlags = 0;
-	
-	SendInput(2, ip, sizeof(INPUT));
-}
-
-void upLeftDiag(){
-	// Press the spacebar
-	ip[0].ki.wVk = VK_SPACE;
-	ip[0].ki.dwFlags = 0;
-	//press "LEFT" key
-	ip[1].ki.wVk = VK_LEFT;
-	ip[1].ki.dwFlags = 0;
-
-	SendInput(2, ip, sizeof(INPUT));
-}
-
-void releaseKey(){
-	// Release the key
-	ip[0].ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
-	ip[1].ki.dwFlags = KEYEVENTF_KEYUP; 
-	SendInput(2, ip, sizeof(INPUT));
-}
-
-void initKeyboard(){
-	// Set up a generic keyboard event.
-	ip[0].type = INPUT_KEYBOARD;
-	ip[0].ki.wScan = 0; // hardware scan code for key
-	ip[0].ki.time = 0;
-	ip[0].ki.dwExtraInfo = 0;
-	ip[1].type = INPUT_KEYBOARD;
-	ip[1].ki.wScan = 0; // hardware scan code for key
-	ip[1].ki.time = 0;
-	ip[1].ki.dwExtraInfo = 0;
-}
+int clamp(int n);
+void leftPress();
+void rightPress();
+void spacePress();
+void upRightDiag();
+void upLeftDiag();
+void releaseKey();
+void initKeyboard();
+void checkFingers();
 
 int main(){
 	Mat frame;
@@ -328,15 +268,36 @@ Mat filterHand(VideoCapture cap){
 			centroid.x /= hull[maxContour].size();
 			centroid.y /= hull[maxContour].size();
 
-			//find the fingers
+			//find convex defects of hand
 			vector<Vec4i> defects, fingerDefects;
 			convexityDefects(contours[maxContour], hullI, defects); //find defects
 			fingerDefects = findFingerDefects(defects); //eliminate irrelevant defects
 
-			if (fingerDefects.size() >= 1)
-				numFingers = fingerDefects.size() - 1;
-			else
-				numFingers = 0;
+			///determine number of fingers
+			vector<Point> fingerTips;
+			int i = 0;
+			vector<Vec4i>::iterator d = fingerDefects.begin();
+			while (d != fingerDefects.end()) {
+				Vec4i& v = (*d);
+				int startidx = v[0]; 
+				int endidx = v[1]; 
+				int faridx = v[2];
+				Point ptStart(contours[maxContour][startidx]); 
+				Point ptEnd(contours[maxContour][endidx]);
+				Point ptFar(contours[maxContour][faridx]); 
+				
+				if (i == 0){
+					fingerTips.push_back(ptStart);
+					i++;
+				}
+				fingerTips.push_back(ptEnd);
+				d++;
+				i++;
+			}
+			if (fingerTips.size() == 0){
+				//checkForOneFinger(m);
+				cout << "check for one Finger!" << endl;
+			}
 
 			/// Draw contours
 			Mat drawing = Mat::zeros(finFrame.size(), CV_8UC3);
@@ -370,10 +331,19 @@ Mat filterHand(VideoCapture cap){
 				else
 					releaseKey();
 			}
+			
+			///draw finger tips
+			Point p;
+			int k = 0;
+			for (int i = 0; i<fingerTips.size(); i++){
+				p = fingerTips[i];
+				if (p.y < centroid.y)
+					circle(drawing, p, 5, Scalar(100, 255, 100), 4);
+			}
 
 			/// Show in a window
-			string fingerCount = "fingers: " + to_string(numFingers);
-			putText(drawing, fingerCount, Point(20, 20), FONT_HERSHEY_PLAIN, 2, Scalar(255, 255, 0), 4, 8, 0);
+			//string fingerCount = "fingers: " + to_string(numFingers);
+			//putText(drawing, fingerCount, Point(20, 20), FONT_HERSHEY_PLAIN, 2, Scalar(255, 255, 0), 4, 8, 0);
 			namedWindow("Contours", CV_WINDOW_AUTOSIZE);
 			imshow("Contours", drawing);
 
@@ -382,9 +352,7 @@ Mat filterHand(VideoCapture cap){
 			break;
 		}
 	}
-
-
-
+	
 	return finFrame;
 }
 
@@ -441,4 +409,72 @@ vector<Vec4i> findFingerDefects(vector<Vec4i> defects){
 	}
 
 	return fingerDefects;
+}
+
+int clamp(int n){
+	int x = n > 255 ? 255 : n;
+	x < 0 ? 0 : x;
+
+	return x;
+}
+
+void leftPress(){
+	// Press the "LEFT" key
+	ip[0].ki.wVk = VK_LEFT; // virtual-key code for the left arrow key
+	ip[0].ki.dwFlags = 0; // 0 for key press
+	SendInput(1, &ip[0], sizeof(INPUT));
+}
+
+void rightPress(){
+	// Press the "RIGHT" key
+	ip[0].ki.wVk = VK_RIGHT; // virtual-key code for the right arrow key
+	ip[0].ki.dwFlags = 0; // 0 for key press
+	SendInput(1, &ip[0], sizeof(INPUT));
+}
+
+void spacePress(){
+	ip[0].ki.wVk = VK_SPACE; // virtual-key code for the spacebar
+	ip[0].ki.dwFlags = 0; // 0 for key press
+	SendInput(1, &ip[0], sizeof(INPUT));
+}
+
+void upRightDiag(){
+	// Press the spacebar
+	ip[0].ki.wVk = VK_SPACE;
+	ip[0].ki.dwFlags = 0;
+	//press "RIGHT" key
+	ip[1].ki.wVk = VK_RIGHT;
+	ip[1].ki.dwFlags = 0;
+
+	SendInput(2, ip, sizeof(INPUT));
+}
+
+void upLeftDiag(){
+	// Press the spacebar
+	ip[0].ki.wVk = VK_SPACE;
+	ip[0].ki.dwFlags = 0;
+	//press "LEFT" key
+	ip[1].ki.wVk = VK_LEFT;
+	ip[1].ki.dwFlags = 0;
+
+	SendInput(2, ip, sizeof(INPUT));
+}
+
+void releaseKey(){
+	// Release the key
+	ip[0].ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
+	ip[1].ki.dwFlags = KEYEVENTF_KEYUP;
+	SendInput(2, ip, sizeof(INPUT));
+}
+
+void initKeyboard(){
+	// Set up a generic keyboard event.
+	ip[0].type = INPUT_KEYBOARD;
+	ip[0].ki.wScan = 0; // hardware scan code for key
+	ip[0].ki.time = 0;
+	ip[0].ki.dwExtraInfo = 0;
+	ip[1].type = INPUT_KEYBOARD;
+	ip[1].ki.wScan = 0; // hardware scan code for key
+	ip[1].ki.time = 0;
+	ip[1].ki.dwExtraInfo = 0;
 }
