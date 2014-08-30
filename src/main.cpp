@@ -1,3 +1,4 @@
+#include <Windows.h>
 #include <iostream>
 #include <vector>
 #include <algorithm>
@@ -16,7 +17,7 @@ int dilation_size = 4;
 int const max_elem = 2;
 int const max_kernel_size = 21;
 Scalar avgSkinCol[6];
-int numBox = 6;
+int numSamples = 6;
 
 //create elements for morphological tranforms
 Mat eroElement = getStructuringElement(MORPH_RECT,
@@ -33,6 +34,13 @@ Scalar detectSkinColor(Mat frame, Rect scanBox);
 Mat scanBox(Rect box, Mat frame, int boxNum);
 void detectHand(Mat frame);
 vector<Vec4i> findFingerDefects(vector<Vec4i> defects);
+
+int clamp(int n){
+	int x = n > 255? 255 : n;
+			x < 0?	 0 : x;
+	
+	return x;
+}
 
 int main(){
 	Mat frame;
@@ -62,6 +70,7 @@ Mat filterHand(VideoCapture cap){
 	//performance measurements
 	clock_t begin, end;
 	double tGaussBlr, tThreshold, tCombine, tMedBlur, tMorph, tDisplayResults;
+	Point mousePos(0,0);
 
 	Mat finFrame;
 
@@ -164,11 +173,19 @@ Mat filterHand(VideoCapture cap){
 		cvtColor(frame, frame, CV_BGR2HSV);
 
 		//threshold the images
-		for (int i = 0; i<numBox; i++){
+		for (int i = 0; i<numSamples; i++){
+			Scalar lowerSkinCol, upperSkinCol;
+			//check overflows - unnecessary?
+			lowerSkinCol[0] = clamp(avgSkinCol[i][0] - 30);
+			lowerSkinCol[1] = clamp(avgSkinCol[i][1] - 30);
+			lowerSkinCol[2] = clamp(avgSkinCol[i][2] - 40);
+			upperSkinCol[0] = clamp(avgSkinCol[i][0] + 30);
+			upperSkinCol[1] = clamp(avgSkinCol[i][1] + 30);
+			upperSkinCol[2] = clamp(avgSkinCol[i][2] + 40);
 
 			inRange(frame,
-				Scalar(avgSkinCol[i][0] - 30, avgSkinCol[i][1] - 25, avgSkinCol[i][2] - 25), //0,55,90
-				Scalar(avgSkinCol[i][0] + 30, avgSkinCol[i][1] + 25, avgSkinCol[i][2] + 25), //28,175,230
+				Scalar(lowerSkinCol[0], lowerSkinCol[1], lowerSkinCol[2]), //0,55,90
+				Scalar(upperSkinCol[0], upperSkinCol[1], upperSkinCol[2]), //28,175,230
 				threshImage[i]
 				);
 
@@ -249,6 +266,12 @@ Mat filterHand(VideoCapture cap){
 			drawContours(drawing, hull, maxContour, Scalar(0, 255, 0), 2, 8, hierarchy, 0, Point());
 			///Draw Centroid
 			circle(drawing, centroid, 5, Scalar(255, 0, 0), 10, 8, 0);
+			
+			//move cursor
+			int accel = 2;
+			Point newMousePos(centroid.x * accel, centroid.y * accel);
+			SetCursorPos(newMousePos.x, newMousePos.y);
+			mousePos = newMousePos;
 
 			/// Show in a window
 			string fingerCount = "fingers: " + to_string(numFingers);
@@ -273,11 +296,21 @@ Mat scanBox(Rect box, Mat frame, int boxNum){
 	avgSkinCol[boxNum] = detectSkinColor(frame, box);
 
 	//GaussianBlur(frame, frame, Size(5,5), 0);
+	Scalar lowerSkinCol, upperSkinCol;
+	//check overflows - unnecessary?
+	lowerSkinCol[0] = clamp(avgSkinCol[boxNum][0] - 30);
+	lowerSkinCol[1] = clamp(avgSkinCol[boxNum][1] - 30);
+	lowerSkinCol[2] = clamp(avgSkinCol[boxNum][2] - 40);
+	upperSkinCol[0] = clamp(avgSkinCol[boxNum][0] + 30);
+	upperSkinCol[1] = clamp(avgSkinCol[boxNum][1] + 30);
+	upperSkinCol[2] = clamp(avgSkinCol[boxNum][2] + 40);
+
 	//threshold skin
 	inRange(frame,
-		Scalar(avgSkinCol[boxNum][0] - 30, avgSkinCol[boxNum][1] - 25, avgSkinCol[boxNum][2] - 25),
-		Scalar(avgSkinCol[boxNum][0] + 30, avgSkinCol[boxNum][1] + 25, avgSkinCol[boxNum][2] + 25),
-		threshImage);
+		Scalar(lowerSkinCol[0], lowerSkinCol[1], lowerSkinCol[2]), //0,55,90
+		Scalar(upperSkinCol[0], upperSkinCol[1], upperSkinCol[2]), //28,175,230
+		threshImage[boxNum]
+		);
 
 	//medianBlur(threshImage, threshImage, 5);
 
