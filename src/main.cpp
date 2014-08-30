@@ -7,9 +7,15 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include <ctime>
 
+//DEMO
+bool arrowKeyDemo = false;
+//DEMO
+
 using namespace cv;
 using namespace std;
 
+#define ESC_KEY 27
+//global variables
 int erosion_elem = 0;
 int erosion_size = 3;
 int dilation_elem = 0;
@@ -18,6 +24,11 @@ int const max_elem = 2;
 int const max_kernel_size = 21;
 Scalar avgSkinCol[6];
 int numSamples = 6;
+
+//microsoft input
+INPUT ip[2];
+bool leftPressed = false;
+bool rightPressed = false;
 
 //create elements for morphological tranforms
 Mat eroElement = getStructuringElement(MORPH_RECT,
@@ -42,15 +53,82 @@ int clamp(int n){
 	return x;
 }
 
+void leftPress(){
+	// Press the "LEFT" key
+	ip[0].ki.wVk = VK_LEFT; // virtual-key code for the left arrow key
+	ip[0].ki.dwFlags = 0; // 0 for key press
+	SendInput(1, &ip[0], sizeof(INPUT));
+}
+
+void rightPress(){
+	// Press the "RIGHT" key
+	ip[0].ki.wVk = VK_RIGHT; // virtual-key code for the right arrow key
+	ip[0].ki.dwFlags = 0; // 0 for key press
+	SendInput(1, &ip[0], sizeof(INPUT));
+}
+
+void spacePress(){
+	ip[0].ki.wVk = VK_SPACE; // virtual-key code for the spacebar
+	ip[0].ki.dwFlags = 0; // 0 for key press
+	SendInput(1, &ip[0], sizeof(INPUT));
+}
+
+void upRightDiag(){
+	// Press the spacebar
+	ip[0].ki.wVk = VK_SPACE;
+	ip[0].ki.dwFlags = 0;
+	//press "RIGHT" key
+	ip[1].ki.wVk = VK_RIGHT;
+	ip[1].ki.dwFlags = 0;
+	
+	SendInput(2, ip, sizeof(INPUT));
+}
+
+void upLeftDiag(){
+	// Press the spacebar
+	ip[0].ki.wVk = VK_SPACE;
+	ip[0].ki.dwFlags = 0;
+	//press "LEFT" key
+	ip[1].ki.wVk = VK_LEFT;
+	ip[1].ki.dwFlags = 0;
+
+	SendInput(2, ip, sizeof(INPUT));
+}
+
+void releaseKey(){
+	// Release the key
+	ip[0].ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
+	ip[1].ki.dwFlags = KEYEVENTF_KEYUP; 
+	SendInput(2, ip, sizeof(INPUT));
+}
+
+void initKeyboard(){
+	// Set up a generic keyboard event.
+	ip[0].type = INPUT_KEYBOARD;
+	ip[0].ki.wScan = 0; // hardware scan code for key
+	ip[0].ki.time = 0;
+	ip[0].ki.dwExtraInfo = 0;
+	ip[1].type = INPUT_KEYBOARD;
+	ip[1].ki.wScan = 0; // hardware scan code for key
+	ip[1].ki.time = 0;
+	ip[1].ki.dwExtraInfo = 0;
+}
+
 int main(){
 	Mat frame;
 
 	// open the default camera
 	VideoCapture cap(0);
 
+	//fix exposure
+	cap.set(CV_CAP_PROP_SETTINGS, 1);
+
 	// check if we succeeded
 	if (!cap.isOpened())
 		return -1;
+
+	if (arrowKeyDemo)
+		initKeyboard();
 
 	frame = filterHand(cap);
 
@@ -144,7 +222,7 @@ Mat filterHand(VideoCapture cap){
 		imshow("finImage", finImage);
 		tDisplayResults = double(clock() - begin) / CLOCKS_PER_SEC;
 
-		if (waitKey(30) >= 0){
+		if (waitKey(30) == ESC_KEY){
 			finFrame = finImage;
 			break;
 		}
@@ -267,11 +345,31 @@ Mat filterHand(VideoCapture cap){
 			///Draw Centroid
 			circle(drawing, centroid, 5, Scalar(255, 0, 0), 10, 8, 0);
 			
-			//move cursor
-			int accel = 2;
-			Point newMousePos(centroid.x * accel, centroid.y * accel);
-			SetCursorPos(newMousePos.x, newMousePos.y);
-			mousePos = newMousePos;
+			//optional mouse cursor input
+			//int accel = 2;
+			//Point newMousePos(centroid.x * accel, centroid.y * accel);
+			//SetCursorPos(newMousePos.x, newMousePos.y);
+			//mousePos = newMousePos;
+
+			//Optional Keyboard Input
+			if (arrowKeyDemo){
+				int leftBound = drawing.cols / 4;
+				int rightBound = 3 * drawing.cols / 4;
+				int upBound = drawing.rows / 4;
+
+				if (centroid.x < leftBound && centroid.y < upBound) //up left
+					upLeftDiag();
+				else if (centroid.x > rightBound && centroid.y < upBound) //up right
+					upRightDiag();
+				else if (centroid.x < leftBound && centroid.y > upBound) //left straight
+					leftPress();
+				else if (centroid.x > rightBound && centroid.y > upBound) //right straight
+					rightPress();
+				else if (centroid.y < upBound)
+					spacePress();
+				else
+					releaseKey();
+			}
 
 			/// Show in a window
 			string fingerCount = "fingers: " + to_string(numFingers);
@@ -280,7 +378,7 @@ Mat filterHand(VideoCapture cap){
 			imshow("Contours", drawing);
 
 		}
-		if (waitKey(30) >= 0){
+		if (waitKey(30) == ESC_KEY){
 			break;
 		}
 	}
@@ -299,17 +397,17 @@ Mat scanBox(Rect box, Mat frame, int boxNum){
 	Scalar lowerSkinCol, upperSkinCol;
 	//check overflows - unnecessary?
 	lowerSkinCol[0] = clamp(avgSkinCol[boxNum][0] - 30);
-	lowerSkinCol[1] = clamp(avgSkinCol[boxNum][1] - 30);
-	lowerSkinCol[2] = clamp(avgSkinCol[boxNum][2] - 40);
+	lowerSkinCol[1] = clamp(avgSkinCol[boxNum][1] - 40);
+	lowerSkinCol[2] = clamp(avgSkinCol[boxNum][2] - 30);
 	upperSkinCol[0] = clamp(avgSkinCol[boxNum][0] + 30);
-	upperSkinCol[1] = clamp(avgSkinCol[boxNum][1] + 30);
-	upperSkinCol[2] = clamp(avgSkinCol[boxNum][2] + 40);
+	upperSkinCol[1] = clamp(avgSkinCol[boxNum][1] + 40);
+	upperSkinCol[2] = clamp(avgSkinCol[boxNum][2] + 30);
 
 	//threshold skin
 	inRange(frame,
 		Scalar(lowerSkinCol[0], lowerSkinCol[1], lowerSkinCol[2]), //0,55,90
 		Scalar(upperSkinCol[0], upperSkinCol[1], upperSkinCol[2]), //28,175,230
-		threshImage[boxNum]
+		threshImage
 		);
 
 	//medianBlur(threshImage, threshImage, 5);
