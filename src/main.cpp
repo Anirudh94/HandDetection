@@ -7,14 +7,17 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include <ctime>
 
-//DEMO
-bool arrowKeyDemo = false;
-//DEMO
-
 using namespace cv;
 using namespace std;
 
+/** DEMO **/
+bool arrowKeyDemo = false;
+/** DEMO **/
+
+//constants
 #define ESC_KEY 27
+#define PI 3.14159265
+
 //global variables
 int erosion_elem = 0;
 int erosion_size = 3;
@@ -43,7 +46,7 @@ Mat filterHand(VideoCapture cap);
 Scalar detectSkinColor(Mat frame, Rect scanBox);
 Mat scanBox(Rect box, Mat frame, int boxNum);
 void detectHand(Mat frame);
-vector<Vec4i> findFingerDefects(vector<Vec4i> defects);
+vector<Vec4i> findFingerDefects(vector<Vec4i> defects, vector<Point> contours);
 int clamp(int n);
 void leftPress();
 void rightPress();
@@ -53,6 +56,7 @@ void upLeftDiag();
 void releaseKey();
 void initKeyboard();
 void checkFingers();
+float findAngle(Point start, Point end, Point depth);
 
 int main(){
 	Mat frame;
@@ -193,7 +197,7 @@ Mat filterHand(VideoCapture cap){
 		//threshold the images
 		for (int i = 0; i<numSamples; i++){
 			Scalar lowerSkinCol, upperSkinCol;
-			//check overflows - unnecessary?
+			
 			lowerSkinCol[0] = clamp(avgSkinCol[i][0] - 30);
 			lowerSkinCol[1] = clamp(avgSkinCol[i][1] - 30);
 			lowerSkinCol[2] = clamp(avgSkinCol[i][2] - 40);
@@ -215,8 +219,6 @@ Mat filterHand(VideoCapture cap){
 
 		//get rid of excess noise
 		medianBlur(finImage, finImage, (1 * 2) + 1);
-
-		
 
 		//opening morphological transform
 		erode(finImage, finImage, eroElement);
@@ -271,7 +273,7 @@ Mat filterHand(VideoCapture cap){
 			//find convex defects of hand
 			vector<Vec4i> defects, fingerDefects;
 			convexityDefects(contours[maxContour], hullI, defects); //find defects
-			fingerDefects = findFingerDefects(defects); //eliminate irrelevant defects
+			fingerDefects = findFingerDefects(defects, contours[maxContour]); //eliminate irrelevant defects
 
 			///determine number of fingers
 			vector<Point> fingerTips;
@@ -281,11 +283,11 @@ Mat filterHand(VideoCapture cap){
 				Vec4i& v = (*d);
 				int startidx = v[0]; 
 				int endidx = v[1]; 
-				int faridx = v[2];
+				int depthidx = v[2];
 				Point ptStart(contours[maxContour][startidx]); 
 				Point ptEnd(contours[maxContour][endidx]);
-				Point ptFar(contours[maxContour][faridx]); 
-				
+				Point ptDepth(contours[maxContour][depthidx]);
+
 				if (i == 0){
 					fingerTips.push_back(ptStart);
 					i++;
@@ -305,14 +307,8 @@ Mat filterHand(VideoCapture cap){
 			drawContours(drawing, hull, maxContour, Scalar(0, 255, 0), 2, 8, hierarchy, 0, Point());
 			///Draw Centroid
 			circle(drawing, centroid, 5, Scalar(255, 0, 0), 10, 8, 0);
-			
-			//optional mouse cursor input
-			//int accel = 2;
-			//Point newMousePos(centroid.x * accel, centroid.y * accel);
-			//SetCursorPos(newMousePos.x, newMousePos.y);
-			//mousePos = newMousePos;
 
-			//Optional Keyboard Input
+			///Optional Keyboard Input
 			if (arrowKeyDemo){
 				int leftBound = drawing.cols / 4;
 				int rightBound = 3 * drawing.cols / 4;
@@ -397,18 +393,31 @@ Scalar detectSkinColor(Mat frame, Rect scanBox){
 	return avgSkinColor;
 }
 
-vector<Vec4i> findFingerDefects(vector<Vec4i> defects){
+vector<Vec4i> findFingerDefects(vector<Vec4i> defects, vector<Point> contours){
 	vector<Vec4i> fingerDefects;
-	double minDepth = 2500;
+	double minDepth = 10;
+	double minAngle = 95;
+	Vec4i currD; //used to track the current defect
 
 	for (int i = 0; i < defects.size(); i++){
 		//cout << "depth is: " << defects[i][3] << endl;
-		if (defects[i][3] > minDepth){
+		currD = defects[i];
+		if (currD[3] > minDepth && findAngle(contours[currD[0]], contours[currD[1]], contours[currD[2]]) > minAngle){
 			fingerDefects.push_back(defects[i]);
 		}
 	}
 
 	return fingerDefects;
+}
+
+float findAngle(Point start, Point end, Point depth){
+	Point a(start.x - depth.x, start.y - depth.y); //vector a
+	Point b(end.x - depth.x, end.y - depth.y); //vector b
+	double magAB = sqrt(pow(a.x, 2) + pow(a.y, 2)) * sqrt(pow(b.x, 2) + pow(b.y, 2)); // |a||b|
+	double dotAB = (a.x * b.x) + (a.y * b.y); // a dot b
+	float angle = acos(dotAB / magAB); // arccos( a.b/|a||b|)
+	angle = angle * 180 / PI; //conver to degrees for simplicity
+	return angle;
 }
 
 int clamp(int n){
