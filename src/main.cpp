@@ -416,7 +416,7 @@ float findAngle(Point start, Point end, Point depth){
 	double magAB = sqrt(pow(a.x, 2) + pow(a.y, 2)) * sqrt(pow(b.x, 2) + pow(b.y, 2)); // |a||b|
 	double dotAB = (a.x * b.x) + (a.y * b.y); // a dot b
 	float angle = acos(dotAB / magAB); // arccos( a.b/|a||b|)
-	angle = angle * 180 / PI; //conver to degrees for simplicity
+	angle = angle * 180 / PI; //convert to degrees for simplicity
 	return angle;
 }
 
