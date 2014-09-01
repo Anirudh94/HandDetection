@@ -188,6 +188,7 @@ Mat filterHand(VideoCapture cap){
 		//get frame from camera
 		cap >> frame;
 		flip(frame, frame, 1);
+		frame.copyTo(showFrame);
 
 		//soften image
 		GaussianBlur(frame, frame, Size(5, 5), 0);
@@ -271,6 +272,7 @@ Mat filterHand(VideoCapture cap){
 			centroid.y /= hull[maxContour].size();
 
 			//find convex defects of hand
+			/*
 			vector<Vec4i> defects, fingerDefects;
 			convexityDefects(contours[maxContour], hullI, defects); //find defects
 			fingerDefects = findFingerDefects(defects, contours[maxContour]); //eliminate irrelevant defects
@@ -301,12 +303,17 @@ Mat filterHand(VideoCapture cap){
 				cout << "check for one Finger!" << endl;
 			}
 
+			*/
+
+
 			/// Draw contours
 			Mat drawing = Mat::zeros(finFrame.size(), CV_8UC3);
 			drawContours(drawing, contours, maxContour, Scalar(0, 0, 255), 2, 8, hierarchy, 0, Point());
 			drawContours(drawing, hull, maxContour, Scalar(0, 255, 0), 2, 8, hierarchy, 0, Point());
+			
 			///Draw Centroid
-			circle(drawing, centroid, 5, Scalar(255, 0, 0), 10, 8, 0);
+			//circle(drawing, centroid, 5, Scalar(255, 0, 0), 10, 8, 0);
+			circle(showFrame, centroid, 10, Scalar(255, 0, 0), 10, 2, 0);
 
 			///Optional Keyboard Input
 			if (arrowKeyDemo){
@@ -329,19 +336,22 @@ Mat filterHand(VideoCapture cap){
 			}
 			
 			///draw finger tips
-			Point p;
-			int k = 0;
-			for (int i = 0; i<fingerTips.size(); i++){
-				p = fingerTips[i];
-				if (p.y < centroid.y)
-					circle(drawing, p, 5, Scalar(100, 255, 100), 4);
+			/*
+			Point prevP, currP = fingerTips[0];
+			for (int i = 1; i<fingerTips.size(); i++){
+				currP = fingerTips[i];
+				if (abs(currP.x - prevP.x) > 10 && currP.y < centroid.y){
+					circle(drawing, currP, 5, Scalar(100, 255, 100), 4);
+					prevP = currP;
+				}
 			}
+			*/
 
 			/// Show in a window
 			//string fingerCount = "fingers: " + to_string(numFingers);
 			//putText(drawing, fingerCount, Point(20, 20), FONT_HERSHEY_PLAIN, 2, Scalar(255, 255, 0), 4, 8, 0);
 			namedWindow("Contours", CV_WINDOW_AUTOSIZE);
-			imshow("Contours", drawing);
+			imshow("Contours", showFrame);
 
 		}
 		if (waitKey(30) == ESC_KEY){
@@ -395,14 +405,11 @@ Scalar detectSkinColor(Mat frame, Rect scanBox){
 
 vector<Vec4i> findFingerDefects(vector<Vec4i> defects, vector<Point> contours){
 	vector<Vec4i> fingerDefects;
-	double minDepth = 10;
-	double minAngle = 95;
-	Vec4i currD; //used to track the current defect
+	double minDepth = 2500;
 
 	for (int i = 0; i < defects.size(); i++){
 		//cout << "depth is: " << defects[i][3] << endl;
-		currD = defects[i];
-		if (currD[3] > minDepth && findAngle(contours[currD[0]], contours[currD[1]], contours[currD[2]]) > minAngle){
+		if (defects[i][3] > minDepth){
 			fingerDefects.push_back(defects[i]);
 		}
 	}
